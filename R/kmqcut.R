@@ -1,24 +1,18 @@
+#' Apply quantile-based stratification cutoffs
+#' 
 #' For each feature uses the cutoff supplied as quantile (in 0 to 100 range)
-#' to stratify samples into 2 groups,
-#' plots Kaplan-Meier survival curves, and calculates the log-rank test p-value
+#' to stratify samples into 2 groups, plots Kaplan-Meier survival curves, and
+#' performs the log-rank test.
 #'
-#' @param fname character vector that specifies the name of the file with
-#' feature(s) for each sample. The file must be tab-delimited,
-#' where features are in rows and samples are in columns. First column must
-#' contain feature names. Column names must contain sample ids.
-#' @param sfname character vector that specifies the name of the file with
-#' right-censored survival time data. The file must be tab-delimited,
-#' where samples are in rows. First column must be named 'sample_id' and
-#' contain sample ids that match those in 'fname'. The file must contain
-#' columns called 'stime' and 'scens',
-#' @param bfname character vector that specifies the base name used to
-#' construct output files. If bfname = NULL (default), the 'fname' argument is
-#' used to create a base name. 
-#' with survival time and censoring variable (0 or 1), respectively.
-#' @param wdir character vector that specifies the name of the working
-#' directory for the input/output files (defaults to the current R directory).
-#' Output file names are automatically created by adding\cr"_KM_quant_d"
-#' and corresponding extension to 'fname'.
+#' @param obj SummarizedExperiment object with expression-like data
+#  and survival data
+#' @param bfname a character string (character vector of length 1) that 
+#' specifies the base name used to create output file names, which 
+#' are created by adding\cr"_KM_quant_d" and corresponding extension
+#' to 'bfname'.
+#' @param wdir a character string (character vector of length 1) that
+#' specifies the name of the working directory for the output files 
+#' (defaults to the current R directory).
 #' @param quant numeric value that specifies the cutoff quantile for
 #' stratification. The default is 50th quantile (the median).
 #' @param min_uval numeric value that specifies the minimal percentage of
@@ -38,38 +32,33 @@
 #'
 #' # Example with data files included in the package:
 #'
-#' library(survival)
-#' library(stringr)
-#' library(data.table)
-#' library(tools)
-#' library(pracma)
-#' library(kmcut)
-#'
 #' # Load example gene expression data and survival data for 2 genes and
-#' # 295 samples
-#' fdat <- system.file("extdata", "example_genes_295.txt", package = "kmcut")
-#' sdat <- system.file("extdata", "survival_data_295.txt", package = "kmcut")
+#' # 93 samples
+#' fdat <- system.file("extdata", "example_genes.txt", package = "kmcut")
+#' sdat <- system.file("extdata", "survival_data.txt", package = "kmcut")
 #'
-#' kmqcut(fname = fdat, sfname = sdat, quant = 50, wpdf = FALSE)
+#' # Create SummarizedExperiment object
+#' se <- create_se_object(efile = fdat, sfile = sdat)
+#' 
+#' # Apply quantile-based stratification cutoffs
+#' km_qcut(obj = se, bfname = "test", quant = 50, wpdf = FALSE)
 #'
 #' # This will create two output files in the current working directory:
 #' # 1) Tab-delimited text file with the results:
-#' # "example_genes_295_KM_quant_50.txt"
+#' # "test_KM_quant_50.txt"
 #' # 2) CSV file with low/high sample labels:
-#' # "example_genes_295_KM_quant_50_labels.csv"
+#' # "test_KM_quant_50_labels.csv"
 
-kmqcut<-function(
-                    # The file with feature(s) for each sample
-                    #(samples are in columns, features are in rows)
-                    fname,
-                    # The file with survival time data
-                    sfname,
+km_qcut<-function(
+                    # SummarizedExperiment object with expression data
+                    # and survival data
+                    obj,
                     # Base name for the output files
-                    bfname = NULL,
+                    bfname,
                     # Working directory with the input/output files
                     wdir = getwd(),
                     # The percentile (quantile), the default is 50th
-                    #percentile (median)
+                    # percentile (median)
                     quant = 50,
                     # Min percentage of unique values in ]0, 100] for each
                     #feature
@@ -85,19 +74,24 @@ kmqcut<-function(
                     )
 # begin function
 {
+setwd(wdir)
+error <- character(0)
 
 if(quant <= 0 || quant >= 100)
 {
-    stop("quant must be in ]0, 100[")
+    error<-c(error, "quant must be in ]0, 100[\n")
 }
 if(min_uval <= 0 || min_uval > 100)
 {
-    stop("min_uval must be in ]0, 100]")
+    error<-c(error, "min_uval must be in ]0, 100]\n")
 }
 
-setwd(wdir)
+if(length(error) > 0) stop(error)
 
-if(is.null(bfname)) bfname <- basename(file_path_sans_ext(fname))
+bfname <- file_path_sans_ext(bfname)
+if(length(bfname) == 0)
+  stop("The base file name must be 1 or more characters long\n")
+
 # Name of the output PDF file
 pdf_file <- sprintf("%s_KM_quant_%d.pdf", bfname, quant)
 # Name of the output TXT file
@@ -105,10 +99,11 @@ txt_file <- sprintf("%s_KM_quant_%d.txt", bfname, quant)
 # Name of the output CSV file with low/high sample labels
 csv_file <- sprintf("%s_KM_quant_%d_labels.csv", bfname, quant)
 
-sdat <- read.delim(sfname, header = TRUE, stringsAsFactors = FALSE)
+# The survival time data
+sdat <- get_sdat(obj)
 
-# The input data table
-edat <- read.delim(fname, header = TRUE, row.names = 1)
+# The input expression data table
+edat <- as.data.frame(assay(obj))
 edat <- filter_unique(edat, min_uval)
 
 ids <- intersect(sdat$sample_id, colnames(edat))
@@ -116,15 +111,6 @@ sdat <- sdat[sdat$sample_id %in% ids, ]
 edat <- edat[, colnames(edat) %in% ids]
 sdat <- sdat[order(sdat$sample_id), ]
 edat <- edat[, order(colnames(edat))]
-
-# Check for missing and non-numeric elements
-row.has.na <- apply( edat, 1, function(x){any(is.na(x) | is.nan(x) |
-                                is.infinite(x))} )
-s <- sum(row.has.na)
-if(s > 0)
-{
-    stop("The input data table has missing or non-numeric elements")
-}
 
 # Convert expression data table into a matrix
 edat <- as.matrix(edat)
@@ -197,9 +183,9 @@ if(length(rownames(results)) > 1 && psort == TRUE)
     results <- results[order(results[,"P"]),]
 }
 
-# Convert to table and convert row names into a column
+# Convert row names into a column
 df <- as.data.frame(results)
-setDT(df, keep.rownames=TRUE)
+df <- cbind(rownames(df), df)
 colnames(df)[1] <- "tracking_id"
 
 write.table(df, file = txt_file, quote = FALSE, row.names = FALSE,
@@ -208,7 +194,7 @@ write.table(df, file = txt_file, quote = FALSE, row.names = FALSE,
 if(wlabels == TRUE)
 {
     df <- as.data.frame(sample_labels)
-    setDT(df, keep.rownames=TRUE)
+    df <- cbind(rownames(df), df)
     colnames(df)[1] <- "sample_id"
     write.table(df, file = csv_file, quote = FALSE, row.names = FALSE,
             col.names = TRUE, sep = ",")

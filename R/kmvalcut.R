@@ -1,35 +1,26 @@
-#' Creates Kaplan-Meier survival curves for each feature from a validation
-#' data set by using a file with previously determined
-#' stratification threshold (one threshold per feature), and calculates the
-#' log-rank test p-value.
+#' Validate stratification cutoffs on test data
+#' 
+#' Creates Kaplan-Meier survival curves for a validation data set by using a
+#' file with previously determined stratification cutoffs and performs the
+#' log-rank tests.
 #'
-#' @param input1 character vector that specifies the name of tab-delimited
-#' file with the table that contains one or more feature
+#' @param infile a character string (character vector of length 1) that
+#' specifies the name of tab-delimited 
+#' file with the table that contains features 
 #' and a stratification threshold for each feature (this table is produced
-#' by kmoptscut, kmoptpermcut, kmqcut or kmucut).
+#' by 'km_opt_scut', 'km_opt_pcut', 'km_qcut' or 'km_ucut').
 #' The file with previously determined stratification thresholds must have
 #' first two columns named as 'tracking_id' and 'CUTOFF'.
 #' The 'tracking_id' column contains feature names, the 'CUTOFF' column
 #' contains stratification threshold for each feature.
-#' @param input2 character vector that specifies the name of the validation
-#' file with feature(s) for each sample. The file must be tab-delimited,
-#' where features are in rows and samples are in columns. First column must
-#' contain feature names. Column names must contain sample ids.
-#' Feature names must exactly match the ones in 'input1' file.
-#' @param sfname character vector that specifies the name of the file with
-#' right-censored survival time for the validation data. The file must be
-#' tab-delimited,
-#' where samples are in rows. First column must be named 'sample_id' and
-#' contain sample ids that match those in 'fname'. The file must contain
-#' columns called 'stime' and 'scens',
-#' with survival time and censoring variable (0 or 1), respectively.
-#' @param bfname character vector that specifies the base name used to
-#' construct output files. If bfname = NULL (default), the 'input2' argument
-#' is used to create a base name. 
-#' @param wdir character vector that specifies the name of the working
+#' @param obj SummarizedExperiment object with test expression 
+#  and survival data, which will be used for validation.
+#' @param bfname a character string (character vector of length 1) that
+#' specifies the base name used to construct output files, which are 
+#' created by adding\cr'_KM_val' and corresponding extension to 'bfname'.
+#' @param wdir a character string (character vector of length 1) that
+#' specifies the name of the working 
 #' directory for the input/output files (defaults to the current R directory).
-#' Output file names are automatically created by adding\cr'_KM_val'
-#' and corresponding extension to 'input2'.
 #' @param min_uval numeric value that specifies the minimal percentage of
 #' unique values per feature.
 #' Features that have less than 'min_uval' percent unique values are
@@ -47,46 +38,43 @@
 #'
 #' # Example with data files included in the package:
 #'
-#' library(survival)
-#' library(stringr)
-#' library(data.table)
-#' library(tools)
-#' library(pracma)
-#' library(kmcut)
-#'
 #' # Load training (fdat1) and validation (fdat2) gene expression data
 #' # files and survival data file (sdat).
 #' fdat1 <- system.file("extdata", "expression_data_1.txt", package = "kmcut")
 #' fdat2 <- system.file("extdata", "expression_data_2.txt", package = "kmcut")
-#' sdat <- system.file("extdata", "survival_data_295.txt", package = "kmcut")
+#' sdat <- system.file("extdata", "survival_data.txt", package = "kmcut")
 #'
-#' # Run 'kmqcut' on the training data "expression_data_1.txt" to create a file
-#' # with thresholds "expression_data_1_KM_quant_50.txt".
-#' kmqcut(fname = fdat1, sfname = sdat, quant = 50, min_uval = 40)
+#' # Create SummarizedExperiment object with training data
+#' se1 <- create_se_object(efile = fdat1, sfile = sdat)
 #' 
-#' # Validate the thresholds in "expression_data_1_KM_quant_50.txt" on
-#' # validation data "expression_data_2.txt".
-#' kmvalcut(input1 = "expression_data_1_KM_quant_50.txt",input2 = fdat2,
-#' sfname = sdat, wpdf = FALSE, min_uval = 40)
+#' # Run 'km_qcut' on the training data to create a file
+#' # with thresholds "training_data_KM_quant_50.txt".
+#' km_qcut(obj = se1, bfname = "training_data", quant = 50, min_uval = 40)
+#' 
+#' # Create SummarizedExperiment object with test data
+#' se2 <- create_se_object(efile = fdat2, sfile = sdat)
+#' 
+#' # Validate the thresholds from "training_data_KM_quant_50.txt" on
+#' # test data in 'se2'.
+#' km_val_cut(infile = "training_data_KM_quant_50.txt", obj = se2, 
+#'            bfname = "test", wpdf = FALSE, min_uval = 40)
 #'
 #' # This will create two output files in the current working directory:
 #' # 1) Tab-delimited text file with the results:
-#' # "expression_data_2_KM_val.txt"
+#' # "test_KM_val.txt"
 #' # 2) CSV file with low/high sample labels:
-#' # "expression_data_2_KM_val_labels.csv"
+#' # "test_KM_val_labels.csv"
 
-kmvalcut<-function(
+km_val_cut<-function(
     # File with the table that contains feature(s) and cutoff(s)
-    # (table is produced by kmoptpermcut, kmoptcut, kmqcut or kmucut)
-    input1,
-    # The file with feature(s) for each sample (samples are in columns,
-    # features are in rows)
-    input2,
-    # The file with survival time data
-    sfname,
+    # (table is produced by km_opt_pcut, km_opt_scut, km_qcut or km_ucut)
+    infile,
+    # SummarizedExperiment object with test expression and 
+    # survival data, which will be used for validation
+    obj,
     # Base name for the output files
-    bfname = NULL,
-    # Working directory with the input/output files
+    bfname,
+    # Working directory with the output files
     wdir = getwd(),
     # Min percentage of unique values in ]0, 100%] for each feature
     min_uval = 50,
@@ -100,15 +88,24 @@ kmvalcut<-function(
 )
 # begin function
 {
-
+    setwd(wdir)
+    error <- character(0)
+    
+    if(file.access(infile, mode = 4) == -1)
+    {
+      error <- c(error, sprintf("Unable to open file <%s>\n", infile))
+    }
     if(min_uval <= 0 || min_uval > 100)
     {
-    stop("min_uval must be in ]0, 100]")
+      error<-c(error, "min_uval must be in ]0, 100]\n")
     }
 
-    setwd(wdir)
-
-    if(is.null(bfname)) bfname <- basename(file_path_sans_ext(input2))
+    if(length(error) > 0) stop(error)
+    
+    bfname <- file_path_sans_ext(bfname)
+    if(length(bfname) == 0)
+      stop("The base file name must be 1 or more characters long\n")
+    
     # Name of the output PDF file
     pdf_file <- sprintf("%s_KM_val.pdf", bfname)
     # Name of the output TXT file
@@ -116,13 +113,14 @@ kmvalcut<-function(
     # Name of the output CSV file with low/high sample labels
     csv_file <- sprintf("%s_KM_val_labels.csv", bfname)
     
-    sdat <- read.delim(sfname, header = TRUE, stringsAsFactors = FALSE)
-
+    # The survival time data
+    sdat <- get_sdat(obj)
+    
     # The input table with cutoffs
-    cdat <- read.delim(input1, header = TRUE)
+    cdat <- read.delim(infile, header = TRUE)
 
-    # The input data table with features to test
-    edat <- read.delim(input2, header = TRUE, row.names = 1)
+    # The data table with features to test
+    edat <- as.data.frame(assay(obj))
     edat <- filter_unique(edat, min_uval)
     
     ids <- intersect(sdat$sample_id, colnames(edat))
@@ -130,15 +128,6 @@ kmvalcut<-function(
     edat <- edat[, colnames(edat) %in% ids]
     sdat <- sdat[order(sdat$sample_id), ]
     edat <- edat[, order(colnames(edat))]
-
-    # Check for missing and non-numeric elements
-    row.has.na <- apply( edat, 1, function(x){any(is.na(x) | is.nan(x) |
-        is.infinite(x))} )
-    s <- sum(row.has.na)
-    if(s > 0)
-    {
-    stop("The input data table has missing or non-numeric elements")
-    }
 
     # Convert expression data table into a matrix
     edat <- as.matrix(edat)
@@ -160,7 +149,7 @@ kmvalcut<-function(
 
     if(wpdf == TRUE)
     {
-    pdf(pdf_file)
+      pdf(pdf_file)
     }
 
     for(i in seq_len(n_genes))
@@ -229,9 +218,9 @@ kmvalcut<-function(
     results <- results[order(results[,"P"]),]
     }
 
-    # Convert to table and convert row names into a column
+    # Convert row names into a column
     df <- as.data.frame(results)
-    setDT(df, keep.rownames=TRUE)
+    df <- cbind(rownames(df), df)
     colnames(df)[1] <- "tracking_id"
     write.table(df, file = txt_file, quote = FALSE, row.names = FALSE,
         col.names = TRUE, sep = "\t")
@@ -239,7 +228,7 @@ kmvalcut<-function(
     if(wlabels == TRUE)
     {
     df <- as.data.frame(sample_labels)
-    setDT(df, keep.rownames=TRUE)
+    df <- cbind(rownames(df), df)
     colnames(df)[1] <- "sample_id"
     write.table(df, file = csv_file, quote = FALSE, row.names = FALSE,
         col.names = TRUE, sep = ",")

@@ -1,23 +1,16 @@
-#' For each feature in the input file, this function performs a univariate
-#' Cox regression with the likelihood ratio test.
+#' Fit Cox regression models in batch mode
+#' 
+#' For each feature, fits a univariate Cox regression and performs the
+#' likelihood ratio test.
 #'
-#' @param fname character vector that specifies the name of the file with
-#' feature(s) for each sample. The file must be tab-delimited,
-#' where features are in rows and samples are in columns. First column must
-#' contain feature names. Column names must contain sample ids.
-#' @param sfname character vector that specifies the name of the file with
-#' right-censored survival time data. The file must be tab-delimited,
-#' where samples are in rows. First column must be named sample_id and contain
-#' sample ids that match those in 'fname'. The file must
-#' contain columns called 'stime' and 'scens', with survival time and censoring
-#' variable (0 or 1), respectively.
-#' @param bfname character vector that specifies the base name used to
-#' construct output files. If bfname = NULL (default), the 'fname' argument is
-#' used to create a base name. 
-#' @param wdir character vector that specifies the name of the working
-#' directory for the input/output files (defaults to the current R directory).
-#' Output file names are automatically created by
-#' adding "_ucoxbatch.txt" to 'fname'.
+#' @param obj SummarizedExperiment object with expression-like data
+#  and survival data.
+#' @param bfname a character string (character vector of length 1) that 
+#' specifies the base name used to create the output file name, which 
+#' is created by adding '_ucoxbatch.txt' to 'bfname'.
+#' @param wdir a character string (character vector of length 1) that
+#' specifies the name of the working 
+#' directory for the output file (defaults to the current R directory).
 #' @param min_uval numeric value that specifies the minimal percentage
 #' of unique values per feature (default is 50)
 #' Features that have less than 'min_uval' percent unique values are
@@ -32,31 +25,24 @@
 #'
 #' # Example with data files included in the package:
 #'
-#' library(survival)
-#' library(stringr)
-#' library(data.table)
-#' library(tools)
-#' library(pracma)
-#' library(kmcut)
-#'
 #' # Load example gene expression data and survival data for 2 genes
-#' # and 295 samples
-#' fdat <- system.file("extdata", "example_genes_295.txt", package = "kmcut")
-#' sdat <- system.file("extdata", "survival_data_295.txt", package = "kmcut")
+#' # and 93 samples
+#' fdat <- system.file("extdata", "example_genes.txt", package = "kmcut")
+#' sdat <- system.file("extdata", "survival_data.txt", package = "kmcut")
 #'
-#' ucoxbatch(fname = fdat, sfname = sdat)
+#' # Create SummarizedExperiment object
+#' se <- create_se_object(efile = fdat, sfile = sdat)
+#' 
+#' ucox_batch(obj = se, bfname = "test")
 #'
 #' # This will create in the current working directory a tab-delimited text
-#' # file with the results: "example_genes_295_ucoxbatch.txt"
+#' # file with the results: "test_ucoxbatch.txt"
 
-ucoxbatch<-function(
-    # The file with feature(s) for each sample (samples are in columns,
-    # features are in rows)
-    fname,
-    # The file with survival time data
-    sfname,
+ucox_batch<-function(
+    # SummarizedExperiment object with expression data and survival data
+    obj,
     # Base name for the output files
-    bfname = NULL,
+    bfname,
     # Working directory for the input/output files
     wdir = getwd(),
     # Min percentage of unique values in ]0, 100] for each feature
@@ -69,29 +55,32 @@ ucoxbatch<-function(
 )
 # begin function
 {
+setwd(wdir)
+error <- character(0)
 
 if(min_uval <= 0 || min_uval > 100)
 {
-    stop("min_uval must be in ]0, 100]")
+    error<-c(error, "min_uval must be in ]0, 100]\n")
 }
 
-setwd(wdir)
+if(length(error) > 0) stop(error)
 
-if(is.null(bfname)) bfname <- basename(file_path_sans_ext(fname))
+bfname <- file_path_sans_ext(bfname)
+if(length(bfname) == 0)
+  stop("The base file name must be 1 or more characters long\n")
+
 # Name of the output TXT file
 txt_file <- sprintf("%s_ucoxpbatch.txt", bfname)
 
 # The survival time data
-sdat_init <- read.delim(sfname, header = TRUE, stringsAsFactors = FALSE,
-                    sep = "\t")
+sdat_init <- get_sdat(obj)
 
 # Must have "status" and "time" variables
 sdat <- data.frame(sdat_init$sample_id, sdat_init$scens, sdat_init$stime)
 colnames(sdat) <- c("sample_id", "status", "time")
 
 # The input data table
-edat <- read.delim(fname, header = TRUE, stringsAsFactors = FALSE, sep = "\t",
-                row.names = 1, check.names = TRUE)
+edat <- as.data.frame(assay(obj))
 edat <- filter_unique(edat, min_uval)
 edat <- as.data.frame(t(edat))
 
@@ -103,16 +92,6 @@ colnames(edat)[1] <- "sample_id"
 edat <- merge(edat, sdat, by.x = 1, by.y = 1, all = FALSE)
 rownames(edat) <- unlist(edat["sample_id"])
 edat["sample_id"] <- NULL
-colnames(edat) <- make.names(colnames(edat), unique = TRUE)
-
-# Check for missing and non-numeric elements
-row.has.na <- apply( edat, 1, function(x){any(is.na(x) | is.nan(x) |
-                                            is.infinite(x))} )
-s <- sum(row.has.na)
-if(s > 0)
-{
-    stop("The input data table has missing or non-numeric elements")
-}
 
 # Recalculate the number of features in the table
 n_genes <- length(colnames(edat)) - 2
@@ -144,9 +123,9 @@ if(length(rownames(results)) > 1 && psort == TRUE)
     results <- results[order(results[,"P"]),]
 }
 
-# Convert to table and convert row names into a column
+# Convert row names into a column
 df <- as.data.frame(results)
-setDT(df, keep.rownames=TRUE)
+df <- cbind(rownames(df), df)
 colnames(df)[1] <- "tracking_id"
 write.table(df, file = txt_file, quote = FALSE, row.names = FALSE,
             col.names = TRUE, sep = "\t")

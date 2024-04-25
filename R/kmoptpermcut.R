@@ -1,25 +1,19 @@
-#' For each feature finds a cutoff that optimally stratifies samples
-#' into 2 groups, plots Kaplan-Meier survival curves
-#' and observed vs. expected optimization plot. Then, uses permutation test
-#' to estimate the statistical significance of the optimal cutoff.
+#' Find and evaluate optimal stratification cutoffs
+#' 
+#' For each feature, finds a cutoff that optimally stratifies samples
+#' into 2 groups, plots Kaplan-Meier survival curves and observed vs. expected
+#' optimization plot. Then, performs the permutation test to estimate
+#' the statistical significance of the cutoff.
 #'
-#' @param fname character vector that specifies the name of the file with
-#' feature(s) for each sample. The file must be tab-delimited,
-#' where features are in rows and samples are in columns. First column must
-#' contain feature names. Column names must contain sample ids.
-#' @param sfname character vector that specifies the name of the file with
-#' right-censored survival time data. The file must be tab-delimited,
-#' where samples are in rows. First column must contain sample ids that match
-#' those in 'fname'. The file must contain columns called 'stime' and 'scens',
-#' with survival time and censoring variable (0 or 1), respectively.
-#' @param bfname character vector that specifies the base name used to
-#' construct output files. If bfname = NULL (default), the 'fname' argument is
-#' used to create a base name. 
-#' @param wdir character vector that specifies the name of the working
-#' directory for the input/output files (defaults to the current R directory).
-#' Output file names are automatically created by
-#' adding\cr"KMoptp_minf_.2f_iter_d"
-#' and corresponding extension to 'fname'.
+#' @param obj SummarizedExperiment object with expression-like data
+#  and survival data.
+#' @param bfname a character string (character vector of length 1) that
+#' specifies the base name used to construct output files, which are  
+#' created by adding\cr'KMoptp_minf_.2f_iter_d' and corresponding
+#' extension to 'bfname'.
+#' @param wdir a character string (character vector of length 1) that 
+#' specifies the name of the working directory for the output files 
+#' (defaults to the current R directory).
 #' @param min_fraction numeric value that specifies the minimal fraction of
 #' samples in the smaller group (default is 0.1).
 #' @param min_up_down numeric value that specifies the minimal number of
@@ -30,7 +24,7 @@
 #' The default is n_iter=100 for fast calculations. Recommended
 #' is n_iter=10000 (slow, especially for a large number of samples/features).
 #' @param peak_tolerance numeric value that specifies the maximal difference
-#' between in height between top peaks.
+#' in height between top peaks.
 #' The peak within 'peak_tolerance' closest to the median value is selected.
 #' @param min_uval numeric value that specifies the minimal percentage of
 #' unique values per feature (default is 50).
@@ -45,43 +39,38 @@
 #' @param verbose logical value whether to print progress (default is TRUE).
 #' @param nproc integer value that specifies the number of logical processors
 #' (default is 1, meaning execute sequentially).
+#' 
 #' @return no return value
 #'
 #' @export
+#' 
 #' @examples
 #'
 #' # Example with data files included in the package:
 #'
-#' library(survival)
-#' library(stringr)
-#' library(data.table)
-#' library(tools)
-#' library(pracma)
-#' library(foreach)
-#' library(doParallel)
-#' library(parallel)
-#' library(kmcut)
-#'
 #' # Load example gene expression data and survival data for 2 genes
-#' # and 295 samples:
-#' fdat <- system.file("extdata", "example_genes_295.txt", package = "kmcut")
-#' sdat <- system.file("extdata", "survival_data_295.txt", package = "kmcut")
-#'
+#' # and 93 samples:
+#' fdat <- system.file("extdata", "example_genes.txt", package = "kmcut")
+#' sdat <- system.file("extdata", "survival_data.txt", package = "kmcut")
+#' 
+#' #' # Create SummarizedExperiment object
+#' se <- create_se_object(efile = fdat, sfile = sdat)
+#' 
 #' # Search for optimal cutoffs and run the permutation tests on 1 CPU
-#' kmoptpermcut(fname = fdat, sfname = sdat, wpdf = FALSE, n_iter = 10)
+#' km_opt_pcut(obj = se, bfname = "test", wpdf = FALSE, n_iter = 10)
 #'
 #' # This will create two output files in the current R working directory:
 #' # 1) Tab-delimited text file with the results:
-#' # "example_genes_295_KMoptp_minf_0.10_iter_10.txt"
+#' # "test_KMoptp_minf_0.10_iter_10.txt"
 #' # 2) CSV file with low/high sample labels:
-#' # "example_genes_295_KMoptp_minf_0.10_iter_10_labels.csv"
-kmoptpermcut<-function(
-    # The file with feature(s) for each sample
-    fname,
-    # The file with survival time data
-    sfname,
+#' # "test_KMoptp_minf_0.10_iter_10_labels.csv"
+
+km_opt_pcut<-function(
+    # SummarizedExperiment object with expression data
+    # and survival data
+    obj,
     # Base name for the output files
-    bfname = NULL,
+    bfname,
     # Working directory where the output files will be created
     wdir = getwd(),
     # If the fraction of samples in the smaller group is below this value,
@@ -109,33 +98,42 @@ kmoptpermcut<-function(
 )
 # begin function
 {
-    if(min_fraction < 0 || min_fraction >= 0.5)
+setwd(wdir)
+  
+error <- character(0)
+
+if(n_iter <= 0)
 {
-    stop("min_fraction must be in [0, 0.5[")
+    error<-c(error, "n_iter must be greater than 0\n")
+}
+
+if(min_fraction < 0 || min_fraction >= 0.5)
+{
+  error<-c(error, "min_fraction must be in [0, 0.5[\n")
 }
 if(min_up_down <= 0)
 {
-    stop("min_up_down must be greater than 0")
-}
-if(n_iter <= 0)
-{
-    stop("n_iter must be greater than 0")
+  error<-c(error, "min_up_down must be greater than 0\n")
 }
 if(peak_tolerance <= 0)
 {
-    stop("peak_tolerance must be greater than 0")
+  error<-c(error, "peak_tolerance must be greater than 0\n")
 }
 if(min_uval <= 0 || min_uval > 100)
 {
-    stop("min_uval must be in ]0, 100]")
+  error<-c(error, "min_uval must be in ]0, 100]\n")
 }
+
+if(length(error) > 0) stop(error)
+
+bfname <- file_path_sans_ext(bfname)
+if(length(bfname) == 0)
+  stop("The base file name must be 1 or more characters long\n")
+
 numCores <- detectCores()
 if(nproc > numCores || nproc <= 0) nproc <- numCores - 1
 message("Running on ", nproc, " CPU(s)")
 
-setwd(wdir)
-
-if(is.null(bfname)) bfname <- basename(file_path_sans_ext(fname))
 # Name of the output PDF file
 pdf_file <- sprintf("%s_KMoptp_minf_%.2f_iter_%d.pdf",
                     bfname, min_fraction, n_iter)
@@ -144,13 +142,13 @@ txt_file <- sprintf("%s_KMoptp_minf_%.2f_iter_%d.txt",
                     bfname, min_fraction, n_iter)
 # Name of the output CSV file with low/high sample labels
 csv_file <- sprintf("%s_KMoptp_minf_%.2f_iter_%d_labels.csv",
-                    bfname,min_fraction,n_iter)
+                    bfname, min_fraction, n_iter)
 
 # The survival time data
-sdat <- read.delim(sfname, header = TRUE, stringsAsFactors = FALSE)
+sdat <- get_sdat(obj)
 
 # The input data table
-edat <- read.delim(fname, header = TRUE, row.names = 1)
+edat <- as.data.frame(assay(obj))
 edat <- filter_unique(edat, min_uval)
 
 ids <- intersect(sdat$sample_id,colnames(edat))
@@ -158,16 +156,6 @@ sdat <- sdat[sdat$sample_id %in% ids,]
 edat <- edat[, colnames(edat) %in% ids]
 sdat <- sdat[order(sdat$sample_id), ]
 edat <- edat[,order(colnames(edat))]
-
-# Check for missing and non-numeric elements
-row.has.na <- apply(edat, 1, function(x){any(is.na(x)
-                                        | is.nan(x)
-                                        | is.infinite(x))} )
-s <- sum(row.has.na)
-if(s > 0)
-{
-    stop("The input data table has missing or non-numeric elements")
-}
 
 # Convert expression data table into a matrix
 edat <- as.matrix(edat)
@@ -349,9 +337,9 @@ if(length(rownames(results)) > 1 && psort == TRUE)
 {
     results <- results[order(results[,"P"]),]
 }
-    # Convert to table and convert row names into a column
+# Convert row names into a column
 df <- as.data.frame(results)
-setDT(df, keep.rownames=TRUE)
+df <- cbind(rownames(df), df)
 colnames(df)[1] <- "tracking_id"
 
 write.table(df, file = txt_file, quote = FALSE, row.names = FALSE,
@@ -360,10 +348,11 @@ write.table(df, file = txt_file, quote = FALSE, row.names = FALSE,
 if(wlabels == TRUE)
 {
     df <- as.data.frame(sample_labels)
-    setDT(df, keep.rownames=TRUE)
+    df <- cbind(rownames(df), df)
     colnames(df)[1] <- "sample_id"
     write.table(df, file = csv_file, quote = FALSE, row.names = FALSE,
             col.names = TRUE, sep = ",")
 }
+
 }
 # end function

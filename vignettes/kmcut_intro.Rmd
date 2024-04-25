@@ -12,7 +12,7 @@ output:
     toc_depth: 2 
     fig_width: 5
 abstract: 
-  "Introduction to the KMCUT package"
+  "Introduction to the kmcut package"
 vignette: >
   %\VignetteIndexEntry{kmcut_intro}
   %\VignetteEncoding[utf8]{inputenc}
@@ -49,31 +49,22 @@ The package can be installed from Bioconductor by utilizing the code below:
 BiocManager::install("kmcut")
 ```
 
-The following packages need to be loaded:
+After installation, load the package:
 
 ```{r}
-library(survival)
-library(stringr)
-library(data.table)
-library(pracma)
-library(tools)
-library(foreach)
-library(parallel)
-library(doParallel)
 library(kmcut)
 ```
 
 # Preparing the input data
 
-All core functions in the package require two input tab-delimited text
-files:
+The package requires input data to be in two tab-delimited text files:
 
 1.  A file with right-censored survival data and
 
 2.  A file with gene expression-like features. *The sample identifiers
     in both files must be exactly the same.* The package contains
     built-in example files with survival data and RNA-seq gene
-    expression data that describe 295 neuroblastoma tumor samples
+    expression data that describe neuroblastoma tumor samples
     (Zhang et al, 2015).
 
 a)  The file with survival data must contain at least three columns
@@ -89,7 +80,7 @@ a)  The file with survival data must contain at least three columns
     long*):
 
 ```{r}
-sdat <- system.file("extdata", "survival_data_295.txt", package = "kmcut")
+sdat <- system.file("extdata", "survival_data.txt", package = "kmcut")
 ```
 
 |            |       |       |
@@ -106,13 +97,13 @@ samples.
 
 b)  The file with gene expression-like features must contain samples
     (subjects) in columns and features in rows. The first column must
-    contain sample identifiers and and the first row must contain gene
+    contain gene identifiers and the first row must contain sample
     identifiers. An example file with gene expression features provided
     with the package, its content can be printed as follows (*the output
     of the code is not provided because it is too long*):
 
 ```{r}
-fdat = system.file("extdata", "example_genes_295.txt", package = "kmcut")
+fdat <- system.file("extdata", "example_genes.txt", package = "kmcut")
 ```
 
 +------------+-------------+-------------+-------------+-------------+-------------+
@@ -128,7 +119,22 @@ two genes and five samples.
 
 # Running the package and interpreting the output
 
-## 'kmoptpermcut'
+## 'create_se_object'
+
+Expression and survival data are stored in a  [SummarizedExperiment](https://bioconductor.org/packages/SummarizedExperiment/) 
+object. The function 'create_se_object' reads a file with expression data and
+a file with survival data, and returns a SummarizedExperiment object.
+
+```{r}
+# Read names of the built-in gene expression data file and survival data file
+fdat = system.file("extdata", "example_genes.txt", package = "kmcut")
+sdat = system.file("extdata", "survival_data.txt", package = "kmcut")
+
+# Create a SummarizedExperiment object 'se'
+se = create_se_object(efile = fdat, sfile = sdat)
+```
+
+## 'km_opt_pcut'
 
 This function uses each distinct value of every feature from the dataset
 as a stratification cutoff to select a cutoff that results in the
@@ -192,9 +198,13 @@ O~MAX~ and the Spearman rank correlation between the observed and the expected
 plot is equal to or greater than r(O, E). Otherwise,  
 d[O~RAND(i)~ O~MAX~ AND r~RAND(i)~ r(O, E)] = 0.
 
-The 'kmoptpermcut' function can be run in parallel on multiple processors by 
+The random permutation test described above is time-consuming. It is recommended
+that the users first run the ['km_opt_scut'] function to identify a relatively
+small sub-set of candidate genes, and then apply 'km_opt_pcut' to this sub-set.
+
+The 'km_opt_pcut' function can be run in parallel on multiple processors by 
 setting the `nproc` argument to the desired number of processors. The graph
-below shows how the run time of the 'kmoptpermcut' function decreases when the
+below shows how the run time of the 'km_opt_pcut' function decreases when the
 number of processors is increased. The results were obtained by using a data set
 of 200 genes and 215 samples, with 10000 iterations per gene.
 Benchmarking utilized the NIH High Performance Computing cluster
@@ -202,17 +212,19 @@ Benchmarking utilized the NIH High Performance Computing cluster
 
 ![The run time vs. the number of processors.](../vignettes/gr1.png)
 
-An example of how to run 'kmoptpermcut' on 1 processor with the data files
+An example of how to run 'km_opt_pcut' on 1 processor with the data files
 included in the package:
 
-
-```{r}
+```{r, out.width='70%'}
 # Read names of the built-in gene expression data file and survival data file
-fdat = system.file("extdata", "example_genes_295.txt", package = "kmcut")
-sdat = system.file("extdata", "survival_data_295.txt", package = "kmcut")
+fdat = system.file("extdata", "example_genes.txt", package = "kmcut")
+sdat = system.file("extdata", "survival_data.txt", package = "kmcut")
+
+# Create SummarizedExperiment object
+se = create_se_object(efile = fdat, sfile = sdat)
 
 # Run the permutation test for 10 iterations for each gene, use 1 processor
-kmoptpermcut(fname = fdat, sfname = sdat, n_iter = 10, wlabels = TRUE,
+km_opt_pcut(obj = se, bfname = "test", n_iter = 10, wlabels = TRUE,
                 wpdf = FALSE, verbose = FALSE, nproc = 1)
 ```
 Two graphs are created for each gene, MYCN and MYH2.  
@@ -221,13 +233,13 @@ One graph shows the observed optimization plot (blue circles) and the expected
 optimization plot (green triangles). The optimal stratification cutoff is
 highlighted by the red circle. The Spearman rank correlation between the
 observed and the expected plots is printed after gene name. For instance, in
-the case of MYCN the correlation is high, R = 0.827, indicating good
+the case of MYCN the correlation is high, R = 0.909, indicating good
 optimization. In the case of MYH2, the correlation is low and negative,
-R = -0.115, indicating poor optimization.  
+R = -0.043, indicating poor optimization.  
 The other graph shows the Kaplan-Meier survival curves for groups with low and
 high gene expression groups stratified using the optimal cutoff. The value of
 this optimal cutoff and the p-value are printed after gene name. For instance,
-in the case of MYCN gene, the optimal cutoff is 5.98357 and the p-value is 0 
+in the case of MYCN gene, the optimal cutoff is 5.84464 and the p-value is 0 
 (*note that in the figure the p-value is shown as exactly 0 because only 10
 iterations of the permutation test were used in this example*).
 
@@ -244,16 +256,16 @@ significant results of the optimization for MYH2 confirm this information.
 
 Additionally, this run will create the following two output files in the current
 working directory (the names of output files will be created automatically by
-adding the run information to the base name of the gene expression data file).
+adding the run information to the base name 'bfname').
 
 **a) Tab-delimited text file with the results**  
-"example_genes_295_KMoptp_minf_0.10_iter_10.txt"
+"test_KMoptp_minf_0.10_iter_10.txt"
 
 |             |            |        |       |        |        |      |       |
 |-------------|------------|--------|-------|--------|--------|------|-------|
 | tracking_id | CUTOFF     | CHI_SQ | LOW_N | HIGH_N | R      | P    | FDR_P |
-| MYCN        | 5.98357    | 63.94  | 212   | 83     | 0.827  | 0    | 0     |
-| MYH2        | 0.00219771 | 2.09   | 153   | 142    | -0.115 | 0.36 | 0.36  |
+| MYCN        | 5.84464174 | 70.91  | 49    | 44     | 0.909  | 0    | 0     |
+| MYH2        | 0.00219771 | 2.52   | 42    | 51     | -0.043 | 0.1  | 0.1   |
 
 Table 3. An illustration of the file format for tab-delimited text
 file with the results for two genes. 1st column -- gene id, 2nd --
@@ -263,15 +275,15 @@ optimal cutoff, 4th -- number of samples in low-expression sub-group,
 test p-value, 7th -- FDR-adjusted p-value.
 
 **b) CSV file with low/high sample labels**  
-"example_genes_295_KMoptp_minf_0.10_iter_10_labels.csv"
+"test_KMoptp_minf_0.10_iter_10_labels.csv"
 
 | sample_id  | MYCN | MYH2 |
 |:-----------|:-----|:-----|
-| SEQC_NB001 | 1    | 2    |
-| SEQC_NB002 | 1    | 2    |
 | SEQC_NB003 | 2    | 1    |
-| SEQC_NB004 | 2    | 2    |
-| SEQC_NB005 | 1    | 2    |
+| SEQC_NB005 | 2    | 2    |
+| SEQC_NB006 | 1    | 2    |
+| SEQC_NB016 | 1    | 2    |
+| SEQC_NB051 | 1    | 1    |
 
 Table 4. An illustration of the file format for the CVS file with
 low/high labels for two genes and five samples. 1st column -- sample
@@ -279,48 +291,52 @@ ids, all subsequent columns contain low/high labels for each gene, where
 1 and 2 correspond to low- and high-expression sub-groups, respectively
 ('low' means below the cutoff and 'high' means above the cutoff).
 
-## 'kmoptscut'
+## 'km_opt_scut'
 
 This function uses each distinct value of a given feature observed in
 the dataset as a stratification cutoff to select a cutoff that results
 in the maximum separation of the Kaplan-Meier survival curves, but does
 not use the permutation test to estimate the statistical significance of
-this optimal cutoff. 'kmoptscut' produces graphs and output files virtually
-identical to the output of ['kmoptpermcut'] (except for the permutation
+this optimal cutoff. 'km_opt_scut' produces graphs and output files virtually
+identical to the output of ['km_opt_pcut'] (except for the permutation
 test p-value) and is meant to be used as a fast exploratory alternative
-to ['kmoptpermcut']. An example of how to use 'kmoptscut' with the data
+to ['km_opt_pcut']. An example of how to use 'km_opt_scut' with the data
 files included in the package:
-```{r}
-# Read names of the built-in gene expression data file and survival data file
-fdat = system.file("extdata", "example_genes_295.txt", package = "kmcut")
-sdat = system.file("extdata", "survival_data_295.txt", package = "kmcut")
 
-# Run the function
-kmoptscut(fname = fdat, sfname = sdat, wpdf = FALSE, verbose = FALSE)
+```{r, out.width='70%'}
+# Read names of the built-in gene expression data file and survival data file
+fdat = system.file("extdata", "example_genes.txt", package = "kmcut")
+sdat = system.file("extdata", "survival_data.txt", package = "kmcut")
+
+# Create SummarizedExperiment object
+se <- create_se_object(efile = fdat, sfile = sdat)
+ 
+# Search for optimal cutoffs
+km_opt_scut(obj = se, bfname = "test", wpdf = FALSE, verbose = FALSE)
 ```
 Two graphs are created for each gene, MYCN and MYH2.  
 
 Additionally, this run will create the following two output files in the current
 working directory (the names of output files will be created automatically by
-adding the run information to the base name of the gene expression data file).  
+adding the run information to the base name 'bfname').  
 
 **a) Tab-delimited text file with the results**
-"example_genes_295_KMopt_minf_0.10.txt  
+"test_KMopt_minf_0.10.txt  
 
 **b) CSV file with low/high sample labels**
-"example_genes_295_KMopt_minf_0.10_labels.csv"  
+"test_KMopt_minf_0.10_labels.csv"  
 
 The format of these files is identical to the output files
-described for function ['kmoptpermcut']. The only difference is that the
+described for function ['km_opt_pcut']. The only difference is that the
 tab-delimited file with the results in column 'P' and the PDF file with
 Kaplan-Meier curves contain the p-value obtained from the log-rank test
 performed with the optimal cutoff. *This p-value is provided for
 information purposes only and should not be treated as an actual p-value
-because it does not reflect calculating multiple test statistics
+because it does not reflect the calculation of multiple test statistics
 involved in the optimization procedure applied to select the optimal
 cutoff.*
 
-## 'kmqcut'
+## 'km_qcut'
 
 For each feature, this function uses the cutoff supplied as a quantile
 (from 0 to 100) to stratify samples into 2 groups (below and above this
@@ -328,65 +344,72 @@ quantile), plots Kaplan-Meier survival curves for these two groups and
 calculates the log-rank test p-value. Since for each feature only one
 cutoff corresponding to the specified quantile is used, it is equivalent
 to performing one log-rank test per feature (that is, no optimization is
-performed). An example of how to use 'kmqcut' with the data files
+performed). An example of how to use 'km_qcut' with the data files
 included in the package:
-```{r}
-# Read names of the built-in gene expression data file and survival data file
-fdat = system.file("extdata", "example_genes_295.txt", package = "kmcut")
-sdat = system.file("extdata", "survival_data_295.txt", package="kmcut")
 
+```{r, out.width='70%'}
+# Read names of the built-in gene expression data file and survival data file
+fdat = system.file("extdata", "example_genes.txt", package = "kmcut")
+sdat = system.file("extdata", "survival_data.txt", package="kmcut")
+
+# Create SummarizedExperiment object
+se <- create_se_object(efile = fdat, sfile = sdat)
+ 
 # Use the 50th quantile (the median) to stratify the samples
-kmqcut(fname = fdat, sfname = sdat, quant = 50, wpdf = FALSE)
+km_qcut(obj = se, bfname = "test", quant = 50, wpdf = FALSE)
 ```
 A graph with Kaplan-Meier curves will be created for each gene, MYCN and MYH2.  
 
 Additionally, this run will create the following two output files in the current
 working directory (the names of output files will be created automatically by
-adding the run information to the base name of the gene expression data file).  
+adding the run information to the base name 'bfname').  
 
 **a) Tab-delimited text file with the results**
-"example_genes_295_KM_quant_50.txt"  
+"test_KM_quant_50.txt"  
 
 **b) CSV file with low/high sample labels**
-"example_genes_295_KM_quant_50_labels.csv"  
+"test_KM_quant_50_labels.csv"  
 
 The format of these two files is identical to the output files
-described for function ['kmoptpermcut'].
+described for function ['km_opt_pcut'].
 
-## 'kmucut'
+## 'km_ucut'
 
 For each feature, this function applies the user-supplied fixed value as
 a cutoff to stratify samples into 2 groups (below/above this cutoff),
 plots Kaplan-Meier survival curves for these two groups, and calculates
 the log-rank test p-value. Since for each feature the same fixed cutoff
 is used, it is equivalent to performing one log-rank test per feature
-(no optimization is performed). An example of how to use 'kmucut' with
+(no optimization is performed). An example of how to use 'km_ucut' with
 the data files included in the package:
-```{r}
+```{r, out.width='70%'}
 # Read names of the built-in gene expression data file and survival data file
-fdat = system.file("extdata", "example_genes_295.txt", package = "kmcut")
-sdat = system.file("extdata", "survival_data_295.txt", package = "kmcut")
+fdat = system.file("extdata", "example_genes.txt", package = "kmcut")
+sdat = system.file("extdata", "survival_data.txt", package = "kmcut")
 
+# Create SummarizedExperiment object
+se <- create_se_object(efile = fdat, sfile = sdat)
+ 
 # Use the cutoff = 5 to stratify the samples and remove features that have 
 # less than 90% unique values (this removes the MYH2 gene from the analysis)
-kmucut(fname = fdat, sfname = sdat, cutoff = 5, min_uval = 90, wpdf = FALSE)
+km_ucut(obj = se, bfname = "test", cutoff = 5, min_uval = 90, wpdf = FALSE)
 ```
 A graph with Kaplan-Meier curves is created for gene (there is only MYCN here).  
 
 Additionally, this run will create the following two output files in the current
 working directory (the names of output files will be created automatically by
-adding the run information to the base name of the gene expression data file).  
+adding the run information to the base name 'bfname').  
 
 **a) Tab-delimited text file with the results**
-"example_genes_295_KM_ucut_5.txt"  
+"test_KM_ucut_5.txt"  
 
 **b) CSV file with low/high sample labels**
-"example_genes_295_KM_ucut_5\_labels.csv"  
+"test_KM_ucut_5_labels.csv"  
 
 The format of these two files is identical to the output files described for
-function ['kmoptpermcut'].   
+function ['km_opt_pcut'].   
 
-## 'kmvalcut'
+## 'km_val_cut'
 
 This function creates Kaplan-Meier survival curves for each feature in a
 validation data file by using a file with previously determined
@@ -397,107 +420,145 @@ test per feature (no optimization is performed). The file with
 previously determined stratification cutoffs is a tab-delimited file
 with the table that contains one or more feature and a stratification
 cutoff for each feature (the table is generated by functions
-['kmoptscut'], ['kmoptpermcut'], ['kmqcut'] or ['kmucut']). It must have
+['km_opt_scut'], ['km_opt_pcut'], ['km_qcut'] or ['km_ucut']). It must have
 first two columns named as 'tracking_id' and 'CUTOFF'. The 'tracking_id'
 column contains gene (feature) names, the 'CUTOFF' column contains
 stratification cutoff for each gene (feature). An example of how to use
-'kmvalcut' to validate stratification cutoffs determined by
-['kmoptpermcut']:
-```{r}
-# Read names of the built-in training (fdat1) and test (fdat2) gene expression 
-# data files and survival data file (sdat)
-fdat1 = system.file("extdata", "expression_data_1.txt", package = "kmcut")
-fdat2 = system.file("extdata", "expression_data_2.txt", package = "kmcut")
-sdat = system.file("extdata", "survival_data_295.txt", package = "kmcut")
+'km_val_cut' to validate stratification cutoffs determined by
+['km_qcut']:
+```{r, out.width='70%'}
+# Read names of training (fdat1) and validation (fdat2) gene expression data
+# files and survival data file (sdat).
+fdat1 <- system.file("extdata", "expression_data_1.txt", package = "kmcut")
+fdat2 <- system.file("extdata", "expression_data_2.txt", package = "kmcut")
+sdat <- system.file("extdata", "survival_data.txt", package = "kmcut")
 
-# Step 1: Use training data (fdat1) to find the optimal classification cutoff 
-# for each feature and estimate statistical significance.
-# Results will be saved in file 
-# "expression_data_1_KMoptp_minf_0.10_iter_100.txt"
-kmoptpermcut(fname = fdat1, sfname = sdat, n_iter = 10,
-                verbose = FALSE, min_uval = 90)
+# Create SummarizedExperiment object with training data
+se1 <- create_se_object(efile = fdat1, sfile = sdat)
+
+# Step 1: Run 'km_qcut' on the training data in 'se1'
+km_qcut(obj = se1, bfname = "training_data", quant = 50, min_uval = 40)
 ```
 **Step 1 will create three output files in the current working directory:**
 
 a)  PDF file with plots
-    "expression_data_1\_KMoptp_minf_0.10_iter_100.pdf"  
-b)  Tab-delimited text file with the optimization results
-    "expression_data_1\_KMoptp_minf_0.10_iter_100.txt"  
+    "training_data_KM_quant_50.pdf"  
+b)  Tab-delimited text file with the cutoffs
+    "training_data_KM_quant_50.txt"  
 c)  CSV file with low/high sample labels
-    "expression_data_1\_KMoptp_minf_0.10_iter_100_labels.csv"  
+    "training_data_KM_quant_50.csv"  
 
-The format of these three files is described in section ['kmoptpermcut']. 
-The names of output files will be created automatically by adding the run
-information to the base name of the gene expression data file.
-```{r}
-# Step 2: Use the file created during the step 1 above
-# "expression_data_1_KMoptp_minf_0.10_iter_100.txt"
-# to validate the optimal cutoffs on test expression data (file 'fdat2')
-kmvalcut(input1 = "expression_data_1_KMoptp_minf_0.10_iter_10.txt",
-            input2 = fdat2, sfname = sdat)
+The format of these three files is identical to the output files
+described for function ['km_opt_pcut']. *The only difference is that the
+PDF file does not contain observed vs. expected optimization plots.* 
+
+```{r, out.width='70%'}
+# Create SummarizedExperiment object with test data
+se2 <- create_se_object(efile = fdat2, sfile = sdat)
+ 
+# Step 2: Validate the thresholds from "training_data_KM_quant_50.txt" on
+# the test data in 'se2'.
+km_val_cut(infile = "training_data_KM_quant_50.txt", obj = se2, 
+             bfname = "test", wpdf = TRUE, min_uval = 40)
 ```
 **Step 2 will create three output files in the current working directory:**
 
-a)  PDF file with plots "expression_data_2\_KM_val.pdf"
+a)  PDF file with plots "test_KM_val.pdf"
 b)  Tab-delimited text file with the validation results
-    "expression_data_2\_KM_val.txt"  
+    "test_KM_val.txt"  
 c)  CSV file with low/high sample labels
-    "expression_data_2\_KM_val_labels.csv"  
+    "test_KM_val_labels.csv"  
 
 The format of these three files is identical to the output files
-described for function ['kmoptpermcut']. *The only difference is that the
+described for function ['km_opt_pcut']. *The only difference is that the
 PDF file does not contain observed vs. expected optimization plots.*
-The names of output files will be created automatically by adding the run
-information to the base name of the gene expression data file.
 
-## 'ucoxpred'
+## 'ucox_batch'
 
-This function fits a univariate Cox proportional hazard regression model
-for each feature in the training dataset and then uses the models to
-calculate risk scores for the same features in the test dataset. An
-example of how to use 'ucoxpred' with the data files included in the
+This function fits a univariate Cox proportional hazard regression model and
+performs the likelihood ratio test for each feature in the dataset. 
+An example of how to use 'ucox_batch' with the data files included in the
 package:
+
 ```{r}
-# Read names of the built-in training (fdat1) and test (fdat2) 
-# gene expression data files and survival data file (sdat).
-fdat1 = system.file("extdata", "expression_data_1.txt", package = "kmcut")
-fdat2 = system.file("extdata", "expression_data_2.txt", package = "kmcut")
-sdat = system.file("extdata", "survival_data_295.txt", package = "kmcut")
+# Read names of the built-in gene expression data file (fdat) and
+# survival data file (sdat)
+fdat = system.file("extdata", "example_genes.txt", package = "kmcut")
+sdat = system.file("extdata", "survival_data.txt", package = "kmcut")
 
-# Build Cox model for the training data and use it to calculate risk 
-# scores for the test data.
-ucoxpred(fname1 = fdat1, sfname1 = sdat, fname2 = fdat2, sfname2 = sdat,
-            min_uval = 90, verbose = FALSE)
+# Create SummarizedExperiment object
+se <- create_se_object(efile = fdat, sfile = sdat)
+
+# Perform the regression on the data in 'se'
+ucox_batch(obj = se, bfname = "test")
 ```
-This will create three output files in the current working directory:  
+This will create in the current working directory a tab-delimited text file
+with results "test_ucoxbatch.txt"
 
-**a) Tab-delimited text file with Cox regression summary for the training data**  
-"expression_data_1\_cox_train_sum.txt"  
-
-|             |         |         |                      |                      |
-|-------------|---------|---------|----------------------|----------------------|
-| tracking_id | CC      | HR      | P                    | FDR_P                |
-| MYCN        | 0.66449 | 1.29795 | 5.82806014522526e-06 | 5.82806014522526e-06 |
+|             |         |         |                     |                      |
+|-------------|---------|---------|---------------------|----------------------|
+| tracking_id | CC      | HR      | P                   | FDR_P                |
+| MYCN        | 0.78532 | 1.82512 | 1.6284328112261e-14 | 3.25686562245233e-14 |
+| MYH2        | 0.46433 | 1.43    | 0.318152334987645   | 0.318152334987645    |
 
 Table 5. An illustration of the file format for the tab-delimited text
 file with Cox regression summary. 1st column -- gene id, 2nd --
 concordance coefficient, 3rd -- hazard ratio, 4th -- likelihood ratio
 test p-value, 5th -- FDR-adjusted p-value.
 
+## 'ucox_pred'
+
+This function fits a univariate Cox proportional hazard regression model
+for each feature in the training dataset and then uses the models to
+calculate risk scores for the same features in the test dataset. An
+example of how to use 'ucox_pred' with the data files included in the
+package:
+```{r}
+# Read names of the built-in training (fdat1) and test (fdat2) 
+# gene expression data files and survival data file (sdat)
+fdat1 = system.file("extdata", "expression_data_1.txt", package = "kmcut")
+fdat2 = system.file("extdata", "expression_data_2.txt", package = "kmcut")
+sdat = system.file("extdata", "survival_data.txt", package = "kmcut")
+
+# Create SummarizedExperiment object with training data
+se1 <- create_se_object(efile = fdat1, sfile = sdat)
+# Create SummarizedExperiment object with test data
+se2 <- create_se_object(efile = fdat2, sfile = sdat)
+
+# Fit Cox model on the training data in 'se1' and use it to calculate the risk
+# scores for the test data in 'se2'.
+ucox_pred(obj1 = se1, obj2 = se2, bfname = "demo", min_uval = 40)
+```
+This will create three output files in the current working directory:  
+
+**a) Tab-delimited text file with Cox regression summary for the training data**  
+"demo_cox_train_sum.txt"  
+
+|             |         |         |                     |                      |
+|-------------|---------|---------|---------------------|----------------------|
+| tracking_id | CC      | HR      | P                   | FDR_P                |
+| MYCN        | 0.66449 | 1.29795 | 5.8280601452252e-06 | 1.16561202904505e-05 |
+| MYH2        | 0.45961 | 1.89406 | 0.127377383432028   | 0.127377383432028    |
+
+Table 6. An illustration of the file format for the tab-delimited text
+file with Cox regression summary. 1st column -- gene id, 2nd --
+concordance coefficient, 3rd -- hazard ratio, 4th -- likelihood ratio
+test p-value, 5th -- FDR-adjusted p-value.
+
 **b) Tab-delimited text file with the risk scores for the training data**  
-"expression_data_1\_train_score.txt"  
+"demo_train_score.txt"  
 In this file, rows are genes (features) and columns are samples.  
 
 **c) Tab-delimited text file with the risk scores for the test data**  
-"expression_data_2\_test_score.txt"  
+"demo_test_score.txt"  
 In this file, rows are genes (features) and columns are samples.  
 
-## Table manipulation
+# Table manipulation
 
 The package also contains the following functions that can be used to
 manipulate data tables.
 
-### 'extractrows'
+## 'extract_rows'
 
 This function extracts a sub-set of rows (such as a group of genes) from
 a data table. All columns will be preserved. Names of the rows to be
@@ -506,18 +567,18 @@ case-sensitive, no extra symbols are allowed). An example of how to use
 the function with the data files included in the package:
 ```{r}
 # Read the name of the built-in gene expression data file with 2 genes (2 rows)
-fdat = system.file("extdata", "example_genes_295.txt", package = "kmcut")
+fdat = system.file("extdata", "example_genes.txt", package = "kmcut")
 # Read the name of the built-in list file that contains one gene id (MYCN)
 idlist = system.file("extdata", "rowids.txt", package = "kmcut")
 
 # Run the function
-extractrows(fnamein = fdat, fids = idlist,
+extract_rows(fnamein = fdat, fids = idlist,
             fnameout = "example_genes_subset.txt")
 ```
 This will create a tab-delimited text file "example_genes_subset.txt"
 with one row "MYCN" in the  current working directory.
 
-### 'extractcolumns'
+## 'extract_columns'
 
 This function extracts a sub-set of columns (such as a group of samples)
 from a data table. All rows will be preserved. Names of the columns to
@@ -526,20 +587,20 @@ case-sensitive, no extra symbols are allowed). An example of how to use
 the function with the data files included in the package:
 ```{r}
 # Read the name of the built-in gene expression data file with 2 genes (2 rows)
-fdat = system.file("extdata", "example_genes_295.txt", package = "kmcut")
+fdat = system.file("extdata", "example_genes.txt", package = "kmcut")
 # Read the name of the built-in list file that contains a sub-set of 
 # column (sample) ids
 idlist = system.file("extdata", "columnids.txt", package = "kmcut")
 
 # Run the function
-extractcolumns(fnamein = fdat, fids = idlist,
+extract_columns(fnamein = fdat, fids = idlist,
                     fnameout = "example_samples_subset.txt")
 ```
 This will create a tab-delimited text file "example_samples_subset.txt"
 in the  current working directory. This file will contain columns (samples)
 from the list.
 
-### 'transposetable'
+## 'transpose_table'
 
 This function transposes a data table (that is, converts rows to columns
 and columns to rows). Row names will become column names, and column
@@ -548,10 +609,10 @@ the data file included in the package:
 ```{r}
 # Read the name of the built-in gene expression data file.
 # In this file, genes are rows and samples are columns.
-fdat = system.file("extdata", "example_genes_295.txt", package = "kmcut")
+fdat = system.file("extdata", "example_genes.txt", package = "kmcut")
 
 # Run the function
-transposetable(fnamein = fdat, fnameout = "example_genes_295_transposed.txt")
+transpose_table(fnamein = fdat, fnameout = "example_genes_transposed.txt")
 ```
 This will create a tab-delimited text file "example_genes_295_transposed.txt"
 with the transposed table in the current working directory. In this file,
