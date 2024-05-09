@@ -77,6 +77,10 @@ km_qcut<-function(
 setwd(wdir)
 error <- character(0)
 
+if(is(obj, "SummarizedExperiment") == FALSE)
+{
+  error<-c(error, "Argument 'obj' is not a SummarizedExperiment object\n")
+}
 if(quant <= 0 || quant >= 100)
 {
     error<-c(error, "quant must be in ]0, 100[\n")

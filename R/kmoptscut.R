@@ -90,6 +90,10 @@ setwd(wdir)
   
 error <- character(0)
 
+if(is(obj, "SummarizedExperiment") == FALSE)
+{
+  error<-c(error, "Argument 'obj' is not a SummarizedExperiment object\n")
+}
 if(min_fraction < 0 || min_fraction >= 0.5)
 {
     error<-c(error, "min_fraction must be in [0, 0.5[\n")

@@ -74,6 +74,14 @@ ucox_pred<-function(
 setwd(wdir)
 error <- character(0)
 
+if(is(obj1, "SummarizedExperiment") == FALSE)
+{
+  error<-c(error, "Argument 'obj1' is not a SummarizedExperiment object\n")
+}
+if(is(obj2, "SummarizedExperiment") == FALSE)
+{
+  error<-c(error, "Argument 'obj2' is not a SummarizedExperiment object\n")
+}
 if(min_uval <= 0 || min_uval > 100)
 {
     error<-c(error, "min_uval must be in ]0, 100]\n")

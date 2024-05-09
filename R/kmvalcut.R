@@ -91,6 +91,10 @@ km_val_cut<-function(
     setwd(wdir)
     error <- character(0)
     
+    if(is(obj, "SummarizedExperiment") == FALSE)
+    {
+      error<-c(error, "Argument 'obj' is not a SummarizedExperiment object\n")
+    }
     if(file.access(infile, mode = 4) == -1)
     {
       error <- c(error, sprintf("Unable to open file <%s>\n", infile))

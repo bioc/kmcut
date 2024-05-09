@@ -58,9 +58,13 @@ ucox_batch<-function(
 setwd(wdir)
 error <- character(0)
 
+if(is(obj, "SummarizedExperiment") == FALSE)
+{
+  error<-c(error, "Argument 'obj' is not a SummarizedExperiment object\n")
+}
 if(min_uval <= 0 || min_uval > 100)
 {
-    error<-c(error, "min_uval must be in ]0, 100]\n")
+  error<-c(error, "min_uval must be in ]0, 100]\n")
 }
 
 if(length(error) > 0) stop(error)
