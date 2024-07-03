@@ -1,7 +1,7 @@
 Package: kmcut
 Type: Package
 Title: Optimized Kaplan Meier analysis and identification and validation of prognostic biomarkers
-Version: 0.99.3
+Version: 0.99.4
 Authors@R: c(person(given = "Igor", family =  "Kuznetsov", role = c("aut", "cre"), email = "ibkalb@gmail.com"), person(given = "Javed", family = "Khan", role = "aut", email = "khanjav@mail.nih.gov")) 
 Description: The purpose of the package is to identify prognostic biomarkers and an optimal numeric cutoff for each biomarker that can be used to stratify a group of test subjects (samples) into two sub-groups with significantly different survival (better vs. worse). The package was developed for the analysis of gene expression data, such as RNA-seq. However, it can be used with any quantitative variable that has a sufficiently large proportion of unique values.
 License: Artistic-2.0
@@ -10,6 +10,7 @@ LazyData: false
 Imports: 
     survival,
     tools,
+    methods,
     pracma, 
     doParallel,
     foreach, 
@@ -17,10 +18,10 @@ Imports:
     SummarizedExperiment,
     S4Vectors
 RoxygenNote: 7.2.3
-Suggests: 
+Suggests:
+    BiocStyle,
     knitr,
     rmarkdown,
-    testthat (>= 3.0.0)
 VignetteBuilder: knitr
 biocViews: Software, StatisticalMethod, GeneExpression, Survival
 Config/testthat/edition: 3
